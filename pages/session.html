@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1220">
+  <title>MyCourtQueue — Live Session</title>
+  <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="../index.html" aria-label="MyCourtQueue home"><img src="../assets/logo.svg" alt="" width="40" height="40"><span><span class="brand-word">MyCourt<b>Queue</b></span><span class="brand-tag">Play • Queue • Connect</span></span></a>
+      <div class="spacer"></div>
+      <div class="row-flex" aria-live="off">
+        <span class="live-dot off" id="live-dot" aria-hidden="true"></span>
+        <span class="small muted" id="live-text">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container page">
+    <div id="banner" class="banner" role="alert" hidden></div>
+
+    <section id="invalid" class="card hidden" aria-live="polite">
+      <h1>Link not valid</h1>
+      <p class="muted" id="invalid-msg">This session link is not valid or has expired.</p>
+      <a class="btn primary" href="../index.html">Back to MyCourtQueue</a>
+    </section>
+
+    <div id="content" class="hidden">
+      <div class="session-top">
+        <div class="session-title-row">
+          <h1 id="session-name">Session</h1>
+          <span id="session-status" class="pill pill-green">LIVE</span>
+        </div>
+        <div class="me-picker">
+          <label for="me" class="small muted">I'm playing as (highlights you)</label>
+          <select id="me"><option value="">— Not selected —</option></select>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" id="tabs" aria-label="Session views">
+        <button class="tab" role="tab" data-tab="live" id="tab-live"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg><span>Live</span></button>
+        <button class="tab" role="tab" data-tab="stats" id="tab-stats"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg><span class="tl-full">Player stats</span><span class="tl-short">Stats</span></button>
+        <button class="tab" role="tab" data-tab="results" id="tab-results"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3"/></svg><span>Results</span></button>
+        <button class="tab" role="tab" data-tab="notifications" id="tab-notifications"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="tl-full">Notifications</span><span class="tl-short">Notify</span></button>
+      </div>
+
+      <section data-panel="live" aria-labelledby="tab-live">
+        <div class="cols two">
+          <div>
+            <h2>Courts</h2>
+            <div class="courts" id="courts"></div>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <div class="card-head"><h2>Queue</h2><span class="small muted">Teams are paired up</span></div>
+              <div id="counts"></div>
+              <div id="queue"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-panel="stats" aria-labelledby="tab-stats" hidden>
+        <div class="card"><div class="card-head"><h2>Player statistics</h2></div><div id="stats"></div></div>
+      </section>
+
+      <section data-panel="results" aria-labelledby="tab-results" hidden>
+        <div class="card"><div class="card-head"><h2>Recent results</h2></div><div id="results"></div></div>
+      </section>
+
+      <section data-panel="notifications" aria-labelledby="tab-notifications" hidden>
+        <div class="card">
+          <div class="card-head"><h2>Recent announcements</h2></div>
+          <div id="announce"></div>
+          <p class="hint">Popups appear while this page is open. They won't appear if the page is closed.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/views.js"></script>
+  <script src="../js/notifications.js"></script>
+  <script src="../js/session.js"></script>
+</body>
+</html>

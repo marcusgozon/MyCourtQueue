@@ -1,0 +1,6 @@
+-make ui better
+-center nav
+-add a icon feature for players that can be stored on db
+-adjust scaling
+- make color theme
+- ask ai for suggestions

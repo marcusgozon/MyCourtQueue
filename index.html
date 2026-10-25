@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1220">
+  <title>MyCourtQueue — Badminton Queue Management</title>
+  <meta name="description" content="Run a fair doubles queue for your badminton session. Share one link so everyone sees who's up next.">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="index.html" aria-label="MyCourtQueue home"><img src="assets/logo.svg" alt="" width="40" height="40"><span><span class="brand-word">MyCourt<b>Queue</b></span><span class="brand-tag">Play • Queue • Connect</span></span></a>
+    </div>
+  </header>
+
+  <main class="container page">
+    <div id="banner" class="banner error" role="alert" hidden></div>
+
+    <section class="hero">
+      <h1>Fair doubles queue.<br><span style="color:var(--emerald)">Everyone knows when they're up.</span></h1>
+      <p>Create a session, add your players and share one link. Courts fill automatically, finished players rotate to the back, and a popup tells the next four to head to their court.</p>
+    </section>
+
+    <div class="cols two">
+      <section class="card" aria-labelledby="create-h" id="create-card">
+        <div class="card-head"><h2 id="create-h">Create a session</h2></div>
+        <form id="create-form" novalidate>
+          <div class="form-grid two field">
+            <div>
+              <label for="s-name">Session name</label>
+              <input id="s-name" type="text" maxlength="60" placeholder="Friday night smashers" required autocomplete="off">
+            </div>
+            <div>
+              <label for="s-courts">Courts</label>
+              <div class="stepper">
+                <button type="button" class="btn icon" id="c-minus" aria-label="Fewer courts">−</button>
+                <input id="s-courts" type="number" min="1" max="12" value="2" inputmode="numeric" aria-label="Number of courts">
+                <button type="button" class="btn icon" id="c-plus" aria-label="More courts">+</button>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="s-players">Players <span class="muted" id="p-count">(0)</span></label>
+            <textarea id="s-players" placeholder="One name per line&#10;Alex&#10;Ben&#10;Carlo&#10;Dan"></textarea>
+            <div class="hint">You can add or remove players any time. With four or more players, courts fill straight away in this order.</div>
+          </div>
+          <div class="form-grid two field">
+            <div>
+              <label for="s-pass">Queue master password</label>
+              <input id="s-pass" type="password" minlength="6" autocomplete="new-password" placeholder="At least 6 characters" required>
+              <div class="hint">Needed to manage the session from another device. It can't be recovered, so keep it safe.</div>
+            </div>
+          </div>
+          <button class="btn primary block" type="submit" id="create-btn">Create session</button>
+        </form>
+
+        <div id="created" class="hidden" aria-live="polite">
+          <div class="banner" style="background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.5);color:var(--mint)">Session created. Share the player link — keep the admin link for yourself.</div>
+          <div class="field">
+            <label for="out-public">Player link (view only)</label>
+            <div class="copy-box"><input id="out-public" type="text" readonly><button class="btn primary" type="button" data-copy="out-public">Copy</button></div>
+          </div>
+          <div class="field">
+            <label for="out-admin">Your admin link</label>
+            <div class="copy-box"><input id="out-admin" type="text" readonly><button class="btn" type="button" data-copy="out-admin">Copy</button></div>
+            <div class="hint">Open it on any device and sign in with your password.</div>
+          </div>
+          <div class="row-flex">
+            <a class="btn primary" id="go-admin" href="#">Open dashboard</a>
+            <a class="btn" id="go-public" href="#">Open player page</a>
+            <button class="btn ghost" type="button" id="new-session">Create another</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="stack">
+        <section class="card" aria-labelledby="saved-h">
+          <div class="card-head"><h2 id="saved-h">Your sessions</h2></div>
+          <div id="saved"></div>
+          <details style="margin-top:12px">
+            <summary class="btn ghost sm" style="display:inline-flex">Sign in from another device</summary>
+            <form id="login-form" style="margin-top:12px" novalidate>
+              <div class="field"><label for="l-id">Session ID</label><input id="l-id" type="text" autocomplete="off" placeholder="S_…"></div>
+              <div class="field"><label for="l-pass">Password</label><input id="l-pass" type="password" autocomplete="current-password"></div>
+              <button class="btn primary block" type="submit">Sign in</button>
+            </form>
+          </details>
+        </section>
+
+        <section class="card" aria-labelledby="join-h">
+          <div class="card-head"><h2 id="join-h">Joining a session?</h2></div>
+          <form id="join-form" novalidate>
+            <div class="field">
+              <label for="j-link">Paste the player link</label>
+              <input id="j-link" type="text" placeholder="https://…/pages/session.html?session=…" autocomplete="off">
+            </div>
+            <button class="btn block" type="submit">View live queue</button>
+          </form>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/home.js"></script>
+</body>
+</html>

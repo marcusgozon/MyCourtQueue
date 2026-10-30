@@ -95,6 +95,7 @@
     pill.className = 'pill ' + (closed ? 'pill-gray' : 'pill-green');
     $('#open-public').href = U.publicUrl(s.session.publicToken);
     $('#end-session').hidden = closed;
+    $('#delete-session').hidden = !closed;
     $('#rename').hidden = closed;
     $('#court-count').textContent = s.courts.length;
     ['#courts-minus', '#courts-plus', '#fill', '#quick-add button'].forEach(function (sel) { $(sel).disabled = closed; });
@@ -123,6 +124,7 @@
       var btns = '';
       if (!closed) {
         btns += '<button class="btn sm" data-act="rename-player" ' + id + '>Rename</button>';
+        btns += '<button class="btn sm" data-act="set-target" ' + id + '>Target</button>';
         if (p.status === 'WAITING') btns += '<button class="btn sm" data-act="q-break" ' + id + '>Set unavailable</button>';
         if (p.status === 'UNAVAILABLE') btns += '<button class="btn sm primary" data-act="rejoin" ' + id + '>Rejoin queue</button>';
         if (p.status === 'LEFT') btns += '<button class="btn sm primary" data-act="rejoin" ' + id + '>Re-add</button>';
@@ -131,8 +133,9 @@
           btns += '<button class="btn sm danger" data-act="q-remove" ' + id + '>' + (p.status === 'PLAYING' ? 'Leave after match' : 'Remove') + '</button>';
         }
       }
+      var target = p.targetGames > 0 ? '<span class="games-count" title="Games target">target ' + p.targetGames + '</span>' : '';
       return '<div class="prow"><span class="avatar" aria-hidden="true">' + esc(U.initials(p.name)) + '</span>' +
-        '<span class="q-name">' + esc(p.name) + '</span>' + V.gamesBadge(s, p.playerId) + statusPill(p) + '<div class="q-actions">' + btns + '</div></div>';
+        '<span class="q-name">' + esc(p.name) + '</span>' + V.gamesBadge(s, p.playerId) + target + V.targetBadge(p) + statusPill(p) + '<div class="q-actions">' + btns + '</div></div>';
     }).join('');
   }
 
@@ -269,6 +272,29 @@
     });
   }
 
+  function targetModal(playerId, name) {
+    var p = state.players.filter(function (x) { return x.playerId === playerId; })[0];
+    if (!p) return;
+    ui.modal({
+      title: 'Target games — ' + name,
+      body: '<p class="muted small">Players below their target are moved to the third group of the queue: they rest for the next two games, then take their turn. A target of 0 turns this off.</p>' +
+        '<p class="small" style="margin:0 0 10px">Played <b>' + p.games + '</b> game' + (p.games === 1 ? '' : 's') + ' so far.</p>' +
+        '<label for="tg">Games target</label><input id="tg" type="number" min="0" max="200" inputmode="numeric" value="' + p.targetGames + '">',
+      onOpen: function (root) { root.querySelector('#tg').select(); },
+      actions: [
+        { label: 'Cancel', kind: 'ghost' },
+        {
+          label: 'Save target', kind: 'primary',
+          onClick: async function (c) {
+            var v = Number(c.root.querySelector('#tg').value);
+            if (!isFinite(v) || v < 0) { ui.toast('Enter 0 or more games.', 'warn'); return false; }
+            return !!(await act(null, 'setPlayerTarget', { playerId: playerId, targetGames: Math.floor(v) }, 'Target updated.'));
+          }
+        }
+      ]
+    });
+  }
+
   function renameModal(title, current, onSave, max) {
     ui.modal({
       title: title,
@@ -326,22 +352,23 @@
       }
       case 'rename-player':
         return renameModal('Rename player', btn.dataset.name || '', function (v) { return act(null, 'editPlayer', { playerId: id, name: v }, 'Renamed.'); });
+      case 'set-target': return targetModal(id, btn.dataset.name || nameOf(id));
     }
   });
 
   $('#quick-add').addEventListener('submit', async function (e) {
     e.preventDefault();
-    var input = $('#quick-name'), v = input.value.trim();
+    var input = $('#quick-name'), v = U.cleanName(input.value);
     if (!v) return;
-    var d = await act(e.submitter, 'addPlayers', { names: [v] });
+    var d = await act(e.submitter, 'addPlayers', { names: [v], catchUp: $('#quick-catchup').checked });
     if (d) { input.value = ''; input.focus(); }
   });
 
   $('#bulk-add').addEventListener('submit', async function (e) {
     e.preventDefault();
-    var names = $('#bulk-names').value.split(/[\n,]+/).map(function (n) { return n.trim(); }).filter(Boolean);
+    var names = $('#bulk-names').value.split(/[\n,]+/).map(U.cleanName).filter(Boolean);
     if (!names.length) return;
-    var d = await act(e.submitter, 'addPlayers', { names: names }, names.length + ' player' + (names.length > 1 ? 's' : '') + ' added.');
+    var d = await act(e.submitter, 'addPlayers', { names: names, catchUp: $('#bulk-catchup').checked }, names.length + ' player' + (names.length > 1 ? 's' : '') + ' added.');
     if (d) $('#bulk-names').value = '';
   });
 
@@ -364,6 +391,24 @@
     var live = state.courts.filter(function (c) { return c.match; }).length;
     var msg = 'Players will see that the session has ended and no more changes can be made.' + (live ? ' ' + live + ' match' + (live > 1 ? 'es' : '') + ' still in progress will be cancelled and not counted.' : '') + ' You can still correct finished results.';
     if (await ui.confirm({ title: 'End this session?', message: msg, confirmLabel: 'End session', danger: true })) act(e.currentTarget, 'closeSession', {}, 'Session ended.');
+  });
+
+  $('#delete-session').addEventListener('click', async function (e) {
+    var btn = e.currentTarget;
+    var ok = await ui.confirm({
+      title: 'Delete this session?',
+      message: 'Every player, match, result and announcement for this session will be permanently removed from the database. This cannot be undone.',
+      confirmLabel: 'Delete forever', danger: true
+    });
+    if (!ok) return;
+    await ui.busy(btn, async function () {
+      try {
+        await CQ.api.admin('deleteSession');
+        CQ.auth.forget(sessionId);
+        if (poller) poller.stop();
+        location.replace('../index.html');
+      } catch (err) { ui.error(err); }
+    });
   });
 
   /* ---------- boot ---------- */

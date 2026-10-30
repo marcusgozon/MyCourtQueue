@@ -101,13 +101,15 @@ function act_completeMatch_(ctx, req) {
 }
 
 /**
- * After a match, players go back in their match order.
- * where = 'end'   -> end of the queue (completed match, Rule 3)
- * where = 'front' -> front of the queue (cancelled match, nobody played)
+ * After a match, players go back to the queue.
+ * where = 'end'   -> end of the queue, in a random order: shuffling the four breaks up
+ *                    the teams from the game that just finished, so the same players
+ *                    don't line up with the same partner/opponents again.
+ * where = 'front' -> front of the queue in match order (cancelled match, nobody played)
  */
 function returnPlayersToQueue_(ctx, m, where) {
   var now = nowIso_();
-  var ids = matchPlayerIds_(m);
+  var ids = where === 'end' ? shuffle_(matchPlayerIds_(m)) : matchPlayerIds_(m);
   var front = 0;
   if (where === 'front') {
     var waiting = ctx.players.filter(function (p) { return p.status === 'WAITING'; });

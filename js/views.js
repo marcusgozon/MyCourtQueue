@@ -24,6 +24,14 @@
     return '<span class="games-count" title="' + description + '">' + label + '</span>';
   };
 
+  /** Shown while a player is below their target games: resting, then guaranteed a game. */
+  V.targetBadge = function (item) {
+    if (!item || !item.needsGames) return '';
+    var n = item.needsGames;
+    return '<span class="prio-badge" title="Catch-up: ' + n + ' more game' + (n === 1 ? '' : 's') +
+      ' towards a target of ' + item.targetGames + '. They rest for the next games, then take their turn.">\u2191 ' + n + ' to go</span>';
+  };
+
   /* ---------- courts ---------- */
 
   /* Top-down doubles court, 50 units per metre (13.4 m x 6.1 m) plus an 18-unit surround.
@@ -118,7 +126,7 @@
       return '<li class="q-item' + (mine(opts.meId, item.playerId) ? ' me' : '') + '">' +
         '<span class="pos" aria-label="Position ' + item.position + '">' + item.position + '</span>' +
         '<span class="avatar" aria-hidden="true">' + esc(U.initials(item.name)) + '</span>' +
-        '<span class="q-name">' + esc(item.name) + '</span>' + V.gamesBadge(state, item.playerId) + admin + '</li>';
+        '<span class="q-name">' + esc(item.name) + '</span>' + V.targetBadge(item) + V.gamesBadge(state, item.playerId) + admin + '</li>';
     }
     var slot = '<li class="q-item slot"><span class="pos" aria-hidden="true">–</span><span class="q-name">Open spot</span></li>';
     function team(label, a, b) {

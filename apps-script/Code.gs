@@ -12,7 +12,7 @@
  * script.googleusercontent.com, which serves Access-Control-Allow-Origin: *.
  */
 
-var LIMITS = { MAX_COURTS: 12, MAX_PLAYERS: 120, NAME_MAX: 40, SESSION_NAME_MAX: 60, MIN_PASSWORD: 6 };
+var LIMITS = { MAX_COURTS: 12, MAX_PLAYERS: 120, NAME_MAX: 40, SESSION_NAME_MAX: 60, MIN_PASSWORD: 6, MAX_TARGET_GAMES: 200, PRIORITY_REST_SLOTS: 8 };
 var PUBLIC_CACHE_SECONDS = 3;
 
 /** Admin action table. Built lazily because Apps Script loads files in arbitrary order. */
@@ -24,6 +24,7 @@ function adminActions_() {
     editPlayer:       { fn: act_editPlayer_, mutates: true },
     removePlayer:     { fn: act_removePlayer_, mutates: true },
     setPlayerStatus:  { fn: act_setPlayerStatus_, mutates: true },
+    setPlayerTarget:  { fn: act_setPlayerTarget_, mutates: true },
     reorderQueue:     { fn: act_reorderQueue_, mutates: true },
     setCourtCount:    { fn: act_setCourtCount_, mutates: true },
     fillCourts:       { fn: act_fillCourts_, mutates: true },
@@ -32,7 +33,9 @@ function adminActions_() {
     cancelMatch:      { fn: act_cancelMatch_, mutates: true, allowClosed: true },
     correctMatch:     { fn: act_correctMatch_, mutates: true, allowClosed: true },
     setMatchPlayers:  { fn: act_setMatchPlayers_, mutates: true },
-    closeSession:     { fn: act_closeSession_, mutates: true, allowClosed: true }
+    closeSession:     { fn: act_closeSession_, mutates: true, allowClosed: true },
+    // noState: the session row is gone afterwards, so there is no state to return.
+    deleteSession:    { fn: act_deleteSession_, mutates: true, allowClosed: true, noState: true }
   };
 }
 
@@ -107,6 +110,10 @@ function handle_(method, req) {
       var ctx = loadContext_(session.session_id);
       if (def.allowClosed !== true) assertActive_(ctx);
       var result = def.fn(ctx, req) || null;
+      if (def.noState) {
+        cache.remove('pub_' + ctx.session.public_token);
+        return JSON.stringify({ ok: true, data: { result: result } });
+      }
       touchSession_(ctx);
       cache.remove('pub_' + ctx.session.public_token);
       var out = JSON.stringify({
@@ -177,8 +184,14 @@ function buildState_(ctx, isAdmin) {
     return out;
   });
 
+  var played = gamesPlayedMap_(ctx);
   var queue = eligible.map(function (p, i) {
-    return { playerId: p.player_id, name: p.player_name, position: i + 1, nextUp: active && i < 4 };
+    var games = played[p.player_id] || 0;
+    var target = Math.max(0, Number(p.target_games) || 0);
+    return {
+      playerId: p.player_id, name: p.player_name, position: i + 1, nextUp: active && i < 4,
+      games: games, targetGames: target, needsGames: Math.max(0, target - games)
+    };
   });
   var counts = {
     waiting: queue.length,
@@ -235,7 +248,12 @@ function buildState_(ctx, isAdmin) {
       .filter(function (p) { return p.status !== 'LEFT' || stats[p.player_id].games > 0; })
       .sort(function (a, b) { return a.player_name.localeCompare(b.player_name); })
       .map(function (p) {
-        return { playerId: p.player_id, name: p.player_name, status: p.status, leaveAfterMatch: p.leave_after_match };
+        var games = played[p.player_id] || 0;
+        var target = Math.max(0, Number(p.target_games) || 0);
+        return {
+          playerId: p.player_id, name: p.player_name, status: p.status, leaveAfterMatch: p.leave_after_match,
+          games: games, targetGames: target, needsGames: Math.max(0, target - games)
+        };
       });
     state.matches = ctx.matches
       .filter(function (m) { return m.status === 'COMPLETED' || m.status === 'CANCELLED'; })

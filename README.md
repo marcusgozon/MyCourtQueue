@@ -34,7 +34,7 @@ badminton-queue/
 ├── pages/
 │   ├── admin.html        queue master dashboard
 │   └── session.html      public live page (queue, courts, popups, stats)
-├── css/style.css         CourtQueue theme (navy/emerald/yellow palette)
+├── css/style.css         CourtQueue theme (near-black/emerald/amber palette)
 ├── js/
 │   ├── config.js         ← paste your Apps Script URL here
 │   ├── api.js            API communication (GET/POST, CORS-safe, error mapping)
@@ -94,10 +94,11 @@ Notifications.player_ids →  comma-separated Players.player_id
 |---|---|---|
 | player_id | string `P_…` | unique |
 | session_id | string | FK |
-| player_name | string | 1–40 chars; unique (case-insensitive) among non-LEFT players in a session |
+| player_name | string | 1–40 chars; unique (case-insensitive) among non-LEFT players in a session. Pasted list numbering (`1.`, `2)`), bullets, emoji, digits and other symbols are stripped on the server before saving, so only the name is stored |
 | queue_order | number | lower = earlier. Only meaningful while `WAITING` |
 | status | `WAITING` \| `PLAYING` \| `UNAVAILABLE` \| `LEFT` | |
 | leave_after_match | boolean | set when a player is removed mid-match |
+| target_games | integer | 0 = normal rotation. Above 0, a catch-up player is placed in the **third group** of the queue (rests the next two games, then takes their turn) until they have played that many games |
 | joined_at / updated_at | ISO string | |
 
 Queue position is *derived*: WAITING players sorted by `queue_order`.
@@ -155,14 +156,16 @@ There is **no stats sheet.** Games, wins, losses, win rate and history are compu
 `processAvailableCourts(ctx)` (Queue.gs) runs under a script lock after anything that can free a court or add a player (match finished, player added/rejoined, court added, manual fill, session creation):
 
 1. Take courts with `status = AVAILABLE`, ascending `court_number`.
-2. For each, take the first four **eligible** players: `status = WAITING`, in no `IN_PROGRESS` match, ordered by `queue_order`.
+2. For each, take the first four **eligible** players: `status = WAITING`, in no `IN_PROGRESS` match, in `queue_order`. Catch-up players are not pulled forward — they are *placed* two groups back (see below), so the queue position alone decides who plays.
+
+**Catch-up players** (`addPlayers` with `catchUp` / `targetGames`, `setPlayerTarget`, or coming back off a break): a player who still owes games is moved to the **start of the third group of four** (queue position 9). They are not in the next game or the one after it, so they get rest, and their place in the queue guarantees their turn. With fewer than eight players waiting there is nothing to rest behind, so they simply take the newest end-of-queue position. Nothing else changes: once they reach the front they play normally, and priority ends when the target is met.
 3. If fewer than four are eligible → stop. The court stays `AVAILABLE`, shows *"Court No. N is available. Waiting for more players."*, and **no notification is created**.
 4. Otherwise create the match (`IN_PROGRESS`), set the four players `PLAYING`, reserve the court, write one notification, and continue to the next court.
 
 **Completing a match** (`completeMatch`):
 1. Verify admin token → confirm match is `IN_PROGRESS` → validate winner/score.
 2. Save result, release the court.
-3. Return each player to the **end of the queue in their original match order** (new `queue_order` values from the session counter). Anyone with `leave_after_match` becomes `LEFT` instead.
+3. Return each player to the **end of the queue in a random order** (new `queue_order` values from the session counter, shuffled), so the same four don't line up with the same partners and opponents in their next game. Anyone with `leave_after_match` becomes `LEFT` instead.
 4. Run `processAvailableCourts` → new matches + notifications.
 5. Return the fresh session state.
 
@@ -223,7 +226,8 @@ All responses: `{ "ok": true, "data": … }` or `{ "ok": false, "error": { "code
 | POST | `createSession` | – | `name, courtCount, players[], password` |
 | POST | `adminLogin` | – | `sessionId, password` |
 | POST | `getAdminSession` | admin | `sessionId, adminToken` |
-| POST | `addPlayers` · `editPlayer` · `removePlayer` · `setPlayerStatus` | admin | names / `playerId`, `name`, `status` |
+| POST | `addPlayers` · `editPlayer` · `removePlayer` · `setPlayerStatus` · `setPlayerTarget` | admin | names / `playerId`, `name`, `status`, `targetGames` |
+| POST | `addPlayers` (priority) | admin | `names[]`, optional `targetGames` (applies to all names) or `catchUp: true` (= most games anyone has played) |
 | POST | `reorderQueue` | admin | `playerIds[]` (exactly the waiting set) |
 | POST | `setCourtCount` · `fillCourts` · `updateSession` | admin | `courtCount` / `name` |
 | POST | `startMatch` | admin | `courtId`, optional `playerIds[4]` |
@@ -231,8 +235,9 @@ All responses: `{ "ok": true, "data": … }` or `{ "ok": false, "error": { "code
 | POST | `cancelMatch` | admin | `matchId` |
 | POST | `setMatchPlayers` | admin | `matchId, playerIds[4]` |
 | POST | `closeSession` | admin | – |
+| POST | `deleteSession` | admin | – (permanently removes the session and all of its rows from every tab, clears its cached public read; returns `{ result }`, no `state`) |
 
-Admin calls also send `sessionId`, `adminToken` and (mutations) `requestId`; they return `{ state, result }` so the UI updates immediately.
+Admin calls also send `sessionId`, `adminToken` and (mutations) `requestId`; they return `{ state, result }` so the UI updates immediately. `deleteSession` is the exception: the session row is gone, so it returns only `{ result }`.
 
 **CORS:** Apps Script can't answer preflight requests. The frontend therefore (a) uses plain GETs and (b) sends POST bodies as `Content-Type: text/plain` (a "simple" request, no preflight) and (c) follows redirects (`redirect: 'follow'`). Google serves the redirected response with `Access-Control-Allow-Origin: *`. **Test the deployed URL early** (step 6 below).
 
@@ -252,6 +257,8 @@ Admin calls also send `sessionId`, `adminToken` and (mutations) `requestId`; the
 1. Select the function **`setupDatabase`** and click **Run**.
 2. Approve the permission prompt (Advanced → Go to project → Allow). It needs access to your spreadsheet.
 3. Check the sheet: it now has the six tabs with headers. A secret for signing admin tokens is generated automatically.
+
+> **Updating an existing deployment?** Deploy the new backend version and the sheet is repaired automatically on the first request (new columns such as `target_games` are added at the end). Running `setupDatabase` by hand also works.
 
 ### Step 4 — Deploy the web app
 1. **Deploy → New deployment → ⚙ Web app**.
@@ -283,13 +290,14 @@ Create a session on `index.html` with 2 courts and 9 players, open the player li
 
 ## 8. Testing checklist
 
-**Automated (included):** `node tests/backend.test.js` runs 18 backend scenarios against an in-memory mock of the Apps Script services: court fill order, exact notification text, rotation, duplicate/retry handling, corrections, voids, leave-after-match, insufficient players, queue validation, manual swaps, court count, closing, session isolation, auth failures, no plaintext password, public data leaks. (It validates the logic, not the live Google services.)
+**Automated (included):** `node tests/backend.test.js` runs 20 backend scenarios against an in-memory mock of the Apps Script services: court fill order, exact notification text, rotation, duplicate/retry handling, corrections, voids, leave-after-match, insufficient players, queue validation, manual swaps, court count, closing, session isolation, auth failures, no plaintext password, public data leaks. (It validates the logic, not the live Google services.)
 
 **Manual (on the deployed app):**
 - [ ] One court, then two or three courts: each fills in ascending order.
 - [ ] Fewer than four waiting: court shows "Waiting for more players", no popup.
 - [ ] Adding the 4th player to an empty court fires exactly one popup.
-- [ ] Finish a match: finished four are at the end of the queue in their old order; next four are called; only the *new* four are named.
+- [ ] Finish a match: finished four go to the end of the queue in a random order; next four are called; only the *new* four are named.
+- [ ] Add a player with *Catch up* ticked: they show a catch-up badge, land at the start of the third queue group (position 9), sit out the next two games, then play.
 - [ ] Finish two courts within a few seconds: no player appears on both courts.
 - [ ] Remove a waiting player; remove a playing player (leaves after match, not re-queued, history kept).
 - [ ] Mark unavailable / rejoin; rename; duplicate-name rejection.
@@ -301,6 +309,8 @@ Create a session on `index.html` with 2 courts and 9 players, open the player li
 - [ ] Open `pages/admin.html` without signing in → login; wrong password → error; player link never shows admin controls.
 - [ ] Invalid link (`pages/session.html?session=abc`) → friendly "Link not valid".
 - [ ] End session: players see "ended", controls are disabled, results still correctable.
+- [ ] Delete session (after ending it): its rows disappear from every spreadsheet tab and the player link stops working.
+- [ ] Paste a numbered/bulleted list into Add players: only the names appear in the queue.
 - [ ] Turn off Wi-Fi briefly: "Reconnecting…" banner, recovers by itself.
 
 ---
@@ -309,6 +319,6 @@ Create a session on `index.html` with 2 courts and 9 players, open the player li
 
 - **Latency:** Apps Script calls take ~0.5–2 s. Admin buttons show a busy state; players may see changes up to ~4 s later.
 - **Quotas:** a typical session (≈20–30 viewers polling every 4 s) is well within Apps Script's free limits, and public reads are cached for 3 s. For very large audiences, increase `POLL_INTERVAL_MS`.
-- **Growth:** the sheet grows by a few rows per match. Delete old sessions' rows periodically if you run many sessions.
+- **Growth:** the sheet grows by a few rows per match. Sessions can be removed permanently with **Delete session** on the dashboard (once ended) or **Delete** in *Your sessions* on the home page. Both delete that session's rows from Sessions, Players, Courts, Matches, Notifications and SessionAdmins and invalidate its public link; the home-page button falls back to removing it from the device only when the saved sign-in has expired.
 - **Time zones:** timestamps are UTC; the browser displays local time.
 - **Logo:** `assets/logo.svg` / `icon.svg` are vector recreations of your shuttlecock mark so it sits cleanly on the dark theme. Your original files are in `assets/` — swap them in if you prefer the exact artwork.

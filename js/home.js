@@ -7,7 +7,8 @@
   }
 
   function names() {
-    return $('#s-players').value.split(/[\n,]+/).map(function (n) { return n.trim(); }).filter(Boolean);
+    // Pasted lists keep their numbering/bullets/emoji out of the queue: only the name survives.
+    return $('#s-players').value.split(/[\n,]+/).map(U.cleanName).filter(Boolean);
   }
   function updateCount() { $('#p-count').textContent = '(' + names().length + ')'; }
   $('#s-players').addEventListener('input', updateCount);
@@ -26,12 +27,37 @@
         '<div class="session-actions">' +
         '<a class="btn sm primary" href="pages/admin.html?session=' + encodeURIComponent(s.sessionId) + '">Dashboard</a>' +
         '<a class="btn sm" href="pages/session.html?session=' + encodeURIComponent(s.publicToken) + '">Player view</a>' +
-        '<button class="btn sm danger" data-forget="' + U.esc(s.sessionId) + '" aria-label="Forget ' + U.esc(s.name) + ' on this device">Forget</button></div></div>';
+        '<button class="btn sm danger" data-delete="' + U.esc(s.sessionId) + '" aria-label="Delete ' + U.esc(s.name) + '">Delete</button></div></div>';
     }).join('') + '</div>';
   }
-  $('#saved').addEventListener('click', function (e) {
-    var id = e.target.getAttribute && e.target.getAttribute('data-forget');
-    if (id) { CQ.auth.forget(id); renderSaved(); }
+  $('#saved').addEventListener('click', async function (e) {
+    var btn = e.target.closest && e.target.closest('[data-delete]');
+    if (!btn) return;
+    var id = btn.getAttribute('data-delete');
+    var entry = CQ.auth.find(id);
+    var name = entry && entry.name ? entry.name : 'this session';
+    var ok = await ui.confirm({
+      title: 'Delete ' + name + '?',
+      message: 'This permanently deletes the session, its players, matches and results from the database. Shared links stop working and it cannot be undone.',
+      confirmLabel: 'Delete forever', danger: true
+    });
+    if (!ok) return;
+    await ui.busy(btn, async function () {
+      try {
+        if (entry && entry.adminToken && entry.expiresAt > Date.now()) {
+          CQ.auth.use(entry);
+          await CQ.api.admin('deleteSession');
+          ui.toast('Session deleted.');
+        } else {
+          ui.toast('Sign-in for this session expired — removed from this device only.', 'warn');
+        }
+      } catch (err) {
+        if (err.code !== 'UNAUTHORIZED' && err.code !== 'NOT_FOUND') { ui.error(err); return; }
+        ui.toast(err.code === 'NOT_FOUND' ? 'Session was already deleted.' : 'Removed from this device only.');
+      }
+      CQ.auth.forget(id);
+      renderSaved();
+    });
   });
   renderSaved();
 

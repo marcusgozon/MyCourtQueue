@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0B1220">
+  <meta name="theme-color" content="#030406">
   <title>MyCourtQueue — Queue Master</title>
   <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/style.css">
@@ -17,6 +17,7 @@
         <button class="btn sm" id="copy-link" type="button">Copy player link</button>
         <a class="btn sm" id="open-public" href="#" target="_blank" rel="noopener">Player page ↗</a>
         <button class="btn sm danger" id="end-session" type="button">End session</button>
+        <button class="btn sm danger" id="delete-session" type="button" hidden>Delete session</button>
         <button class="btn sm ghost" id="logout" type="button">Sign out</button>
       </div>
     </div>
@@ -72,6 +73,7 @@
               <form id="quick-add" class="row-flex" style="margin-bottom:12px" novalidate>
                 <label for="quick-name" class="sr-only">Add a player</label>
                 <input id="quick-name" type="text" maxlength="40" placeholder="Add player…" autocomplete="off" style="flex:1;min-width:120px">
+                <label class="check" for="quick-catchup" title="Rest this player for two games, then give them a guaranteed turn until they have played as many games as the busiest player"><input id="quick-catchup" type="checkbox"> Catch up</label>
                 <button class="btn primary" type="submit">Add</button>
               </form>
               <div id="counts"></div>
@@ -91,8 +93,9 @@
             <div class="card-head"><h2>Add several players</h2></div>
             <form id="bulk-add" novalidate>
               <label for="bulk-names" class="sr-only">Player names</label>
-              <textarea id="bulk-names" placeholder="One name per line"></textarea>
-              <div class="hint">New players join the end of the queue. Names of players who left are re-activated.</div>
+              <textarea id="bulk-names" placeholder="One name per line — pasted numbering and symbols are ignored"></textarea>
+              <label class="check" for="bulk-catchup" style="margin-top:10px"><input id="bulk-catchup" type="checkbox"> Give priority to catch up</label>
+              <div class="hint">New players join the end of the queue. Names of players who left are re-activated. With <b>Catch up</b> ticked, their target is set to the most games anyone has played and they are placed in the third queue group: they rest the next two games, then take their turn until they catch up.</div>
               <button class="btn primary block" type="submit" style="margin-top:10px">Add to queue</button>
             </form>
           </div>

@@ -15,6 +15,22 @@
   U.$ = function (sel, root) { return (root || document).querySelector(sel); };
   U.$$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
   U.uid = function () { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); };
+  /**
+   * Same cleanup as the backend: pasted list numbering, bullets, emoji and other symbols are
+   * dropped so only the player's name is left (letters, spaces, apostrophes, hyphens).
+   */
+  U.cleanName = function (raw) {
+    return String(raw === null || raw === undefined ? '' : raw)
+      .replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .replace(/^\s*(?:\(?\d{1,3}\)?[.):\-–—]?|[-–—•*·])\s*/, '')
+      .replace(/[^\p{L}\p{M}\s'’\-]/gu, ' ')
+      .replace(/[’]/g, "'")
+      .replace(/\s*-\s*/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^-+|-+$/g, '')
+      .trim();
+  };
   U.initials = function (name) {
     var parts = String(name || '?').trim().split(/\s+/);
     return ((parts[0][0] || '?') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();

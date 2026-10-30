@@ -59,7 +59,50 @@ function activePlayerSet_(ctx, exceptMatchId) {
   return set;
 }
 
-/** WAITING players that are in no active match, in queue order. */
+/** Copy of list in random order (Fisher–Yates). */
+function shuffle_(list) {
+  var out = list.slice();
+  for (var i = out.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = out[i]; out[i] = out[j]; out[j] = t;
+  }
+  return out;
+}
+
+/** Games played per player id. Only COMPLETED matches count, exactly like the stats. */
+function gamesPlayedMap_(ctx) {
+  var map = {};
+  ctx.players.forEach(function (p) { map[p.player_id] = 0; });
+  ctx.matches.forEach(function (m) {
+    if (m.status !== 'COMPLETED') return;
+    matchPlayerIds_(m).forEach(function (id) { if (map[id] !== undefined) map[id]++; });
+  });
+  return map;
+}
+
+/** Games a player still owes to reach their target (0 = no target, or target met). */
+function gamesNeeded_(p, played) {
+  var target = Math.max(0, Number(p.target_games) || 0);
+  return Math.max(0, target - (played[p.player_id] || 0));
+}
+
+/** Most games played by any player still in the session (used for "catch up"). */
+function maxGamesPlayed_(ctx) {
+  var played = gamesPlayedMap_(ctx);
+  var max = 0;
+  ctx.players.forEach(function (p) {
+    if (p.status === 'LEFT') return;
+    if ((played[p.player_id] || 0) > max) max = played[p.player_id];
+  });
+  return max;
+}
+
+/**
+ * WAITING players that are in no active match, in queue order.
+ * Players below their target games are NOT pulled forward here: they were placed a couple
+ * of games back when they were added (see placeInThirdGroup_), so they get their rest and
+ * then play in turn. Their queue position decides the game, which is what guarantees it.
+ */
 function eligibleWaiting_(ctx) {
   var active = activePlayerSet_(ctx);
   return ctx.players
@@ -67,12 +110,73 @@ function eligibleWaiting_(ctx) {
     .sort(function (a, b) { return a.queue_order - b.queue_order || a._row - b._row; });
 }
 
+/**
+ * Puts a catch-up player at the start of the third group of four, so they sit out the next
+ * two games (rest) and are then guaranteed their turn. Players behind that point each move
+ * back one slot; players in front are untouched.
+ * With fewer than PRIORITY_REST_SLOTS players waiting there is nothing to rest behind, so
+ * the player simply keeps the newest (end-of-queue) position.
+ */
+function placeInThirdGroup_(ctx, p) {
+  var others = ctx.players
+    .filter(function (q) { return q.status === 'WAITING' && q.player_id !== p.player_id; })
+    .sort(function (a, b) { return a.queue_order - b.queue_order || a._row - b._row; });
+  var at = Math.min(LIMITS.PRIORITY_REST_SLOTS, others.length);
+  var now = nowIso_();
+  p.queue_order = nextOrder_(ctx);
+  p.updated_at = now;
+  updateRow_('Players', p);
+  for (var i = at; i < others.length; i++) {
+    others[i].queue_order = nextOrder_(ctx);
+    others[i].updated_at = now;
+    updateRow_('Players', others[i]);
+  }
+}
+
+/** Puts every waiting player who still owes games at the start of the third group. */
+function applyTargetPriority_(ctx, players) {
+  var played = gamesPlayedMap_(ctx);
+  (players || ctx.players).forEach(function (p) {
+    if (p.status !== 'WAITING') return;
+    if (gamesNeeded_(p, played) <= 0) return;
+    placeInThirdGroup_(ctx, p);
+  });
+}
+
 /* ---------- validation ---------- */
 
+/**
+ * Reduces pasted text to just the player's name: drops list numbering ("1.", "2)", "(3)"),
+ * bullets, emoji, digits and other symbols, keeping letters, marks, spaces, apostrophes
+ * and hyphens ("Anne-Marie"). Returns '' when nothing name-like is left.
+ */
+function stripNameNoise_(raw) {
+  var s = String(raw === undefined || raw === null ? '' : raw)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/^\s*(?:\(?\d{1,3}\)?[.):\-–—]?|[-–—•*·])\s*/, '')
+    .replace(/[^\p{L}\p{M}\s'’\-]/gu, ' ')
+    .replace(/[’]/g, "'")
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^-+|-+$/g, '')
+    .trim();
+  return s;
+}
+
 function cleanName_(raw) {
-  var n = String(raw === undefined || raw === null ? '' : raw).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  var n = stripNameNoise_(raw);
   if (!n) fail_('INVALID_NAME', 'Player names cannot be empty.');
   if (n.length > LIMITS.NAME_MAX) fail_('INVALID_NAME', 'Player names are limited to ' + LIMITS.NAME_MAX + ' characters.');
+  return n;
+}
+
+function parseTargetGames_(raw) {
+  if (raw === undefined || raw === null || raw === '') return 0;
+  var n = Math.floor(Number(raw));
+  if (!isFinite(n) || n < 0 || n > LIMITS.MAX_TARGET_GAMES) {
+    fail_('INVALID_TARGET', 'Target games must be between 0 and ' + LIMITS.MAX_TARGET_GAMES + '.');
+  }
   return n;
 }
 
@@ -81,7 +185,8 @@ function parseNames_(req) {
   var list = [];
   if (Array.isArray(src)) list = src;
   else if (typeof src === 'string') list = src.split(/[\n,]+/);
-  list = list.map(function (n) { return String(n).trim(); }).filter(function (n) { return n.length; });
+  // Clean first, then drop entries that were only numbering/symbols (e.g. a stray "1." line).
+  list = list.map(stripNameNoise_).filter(function (n) { return n.length; });
   return list.map(cleanName_);
 }
 
@@ -149,6 +254,23 @@ function act_updateSession_(ctx, req) {
   ctx.session.session_name = name;
 }
 
+/**
+ * deleteSession: permanently removes the session and every row that belongs to it.
+ * Callers must not read the session state afterwards (Code.gs flags this action noState).
+ */
+function act_deleteSession_(ctx) {
+  var id = ctx.session.session_id;
+  var tables = ['Notifications', 'Matches', 'Players', 'Courts', 'SessionAdmins', 'Sessions'];
+  var removed = {};
+  tables.forEach(function (name) {
+    var rows = readTable_(name).filter(function (r) { return r.session_id === id; });
+    if (rows.length) deleteRows_(name, rows);
+    removed[name] = rows.length;
+  });
+  CacheService.getScriptCache().remove('fail_' + id);
+  return { deleted: true, removed: removed };
+}
+
 /** closeSession: cancels live matches, releases courts, marks the session CLOSED. */
 function act_closeSession_(ctx) {
   if (ctx.session.status === 'CLOSED') return { alreadyClosed: true };
@@ -171,7 +293,8 @@ function act_closeSession_(ctx) {
 
 /* ---------- players ---------- */
 
-function addPlayersCore_(ctx, names) {
+/** targetGames = null keeps a returning player's target (new players start at 0). */
+function addPlayersCore_(ctx, names, targetGames) {
   var seen = {};
   names.forEach(function (n) {
     var k = n.toLowerCase();
@@ -193,6 +316,7 @@ function addPlayersCore_(ctx, names) {
       returning.status = 'WAITING';
       returning.leave_after_match = false;
       returning.queue_order = nextOrder_(ctx);
+      if (targetGames !== null) returning.target_games = targetGames;
       returning.updated_at = now;
       updateRow_('Players', returning);
       added.push(returning);
@@ -200,6 +324,7 @@ function addPlayersCore_(ctx, names) {
       var p = {
         player_id: uid_('P_'), session_id: ctx.session.session_id, player_name: n,
         queue_order: nextOrder_(ctx), status: 'WAITING', leave_after_match: false,
+        target_games: targetGames === null ? 0 : targetGames,
         joined_at: now, updated_at: now
       };
       fresh.push(p);
@@ -211,11 +336,30 @@ function addPlayersCore_(ctx, names) {
   return added;
 }
 
+/**
+ * addPlayers { names[], targetGames?, catchUp? }
+ * targetGames applies to every name in the request; catchUp sets the target to the
+ * most games anyone in the session has played, so a late arrival catches up.
+ */
 function act_addPlayers_(ctx, req) {
   var names = parseNames_(req);
   if (!names.length) fail_('INVALID_NAME', 'Enter at least one player name.');
-  addPlayersCore_(ctx, names);
+  var target = null;
+  if (req.catchUp) target = maxGamesPlayed_(ctx);
+  else if (req.targetGames !== undefined && req.targetGames !== null && req.targetGames !== '') target = parseTargetGames_(req.targetGames);
+  var added = addPlayersCore_(ctx, names, target);
+  applyTargetPriority_(ctx, added);
   processAvailableCourts_(ctx);
+}
+
+/** setPlayerTarget { playerId, targetGames } — 0 removes priority. */
+function act_setPlayerTarget_(ctx, req) {
+  var p = playerById_(ctx, String(req.playerId || ''));
+  if (!p) fail_('NOT_FOUND', 'Player not found.');
+  p.target_games = parseTargetGames_(req.targetGames);
+  p.updated_at = nowIso_();
+  updateRow_('Players', p);
+  applyTargetPriority_(ctx, [p]);
 }
 
 function act_editPlayer_(ctx, req) {
@@ -272,6 +416,7 @@ function act_setPlayerStatus_(ctx, req) {
   }
   p.updated_at = now;
   updateRow_('Players', p);
+  applyTargetPriority_(ctx, [p]);
   processAvailableCourts_(ctx);
 }
 

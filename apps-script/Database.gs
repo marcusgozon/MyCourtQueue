@@ -6,6 +6,8 @@
  */
 
 var DB_NAME = 'BadmintonQueueDB';
+/** Bump when SCHEMA gains a column; ensureReady_() then repairs existing sheets once. */
+var SCHEMA_VERSION = '2';
 
 /** Sheet definitions. `num` / `bool` list the columns that are coerced on read. */
 var SCHEMA = {
@@ -15,8 +17,9 @@ var SCHEMA = {
     bool: []
   },
   Players: {
-    cols: ['player_id', 'session_id', 'player_name', 'queue_order', 'status', 'leave_after_match', 'joined_at', 'updated_at'],
-    num: ['queue_order'],
+    // target_games is appended last so existing sheets gain the column on the next setupDatabase().
+    cols: ['player_id', 'session_id', 'player_name', 'queue_order', 'status', 'leave_after_match', 'joined_at', 'updated_at', 'target_games'],
+    num: ['queue_order', 'target_games'],
     bool: ['leave_after_match']
   },
   Courts: {
@@ -79,14 +82,18 @@ function sheet_(name) {
   return sh;
 }
 
-/** Runs setupDatabase() automatically if the id or token secret is missing. */
+/** Runs setupDatabase() automatically if the id, token secret or schema is out of date. */
 function ensureReady_() {
   var props = PropertiesService.getScriptProperties();
-  if (props.getProperty('SPREADSHEET_ID') && props.getProperty('TOKEN_SECRET')) return;
+  var ready = function () {
+    return !!(props.getProperty('SPREADSHEET_ID') && props.getProperty('TOKEN_SECRET')) &&
+      props.getProperty('SCHEMA_VERSION') === SCHEMA_VERSION;
+  };
+  if (ready()) return;
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    if (!(props.getProperty('SPREADSHEET_ID') && props.getProperty('TOKEN_SECRET'))) setupDatabase();
+    if (!ready()) setupDatabase();
   } finally {
     lock.releaseLock();
   }
@@ -111,6 +118,7 @@ function setupDatabase() {
   if (!props.getProperty('TOKEN_SECRET')) {
     props.setProperty('TOKEN_SECRET', Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid());
   }
+  props.setProperty('SCHEMA_VERSION', SCHEMA_VERSION);
 
   Object.keys(SCHEMA).forEach(function (name) {
     var def = SCHEMA[name];
